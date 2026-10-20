@@ -1,300 +1,485 @@
 
-from datetime import date, datetime, timedelta
-from pathlib import Path
+#!/usr/bin/env python3
+"""
+Rutgers SWRC Pool Schedule Generator
+
+Reads pool-only hours from the official Rutgers Recreation calendar,
+updates the supplied PowerPoint templates, and exports separate PDFs.
+
+Safety rules:
+- Never invent pool hours.
+- Never interpret a missing event as confirmed closed hours.
+- Stop if the calendar cannot be parsed or a template cannot be updated
+  confidently.
+"""
+
 import argparse
 import re
 import subprocess
 import sys
+from datetime import date, datetime, timedelta
+from pathlib import Path
 
+import requests
+from bs4 import BeautifulSoup
 from pptx import Presentation
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import sync_playwright
 
-URL = "https://recreation.rutgers.edu/recreation-list-calendar?calendar_filter=122"
-BASE = Path(__file__).resolve().parent
-OUT = BASE / "output"
 
-TEMPLATES = {
-    "Olympic Pool": BASE / "Olympic Pool Spring 2026 Hours.pptx",
-    "Patio Pool": BASE / "Patio Pool Spring 2026 Hours.pptx",
+CALENDAR_URL = (
+    "https://recreation.rutgers.edu/"
+    "recreation-list-calendar?calendar_filter=122"
+)
+
+ROOT = Path(__file__).resolve().parent
+OUTPUT = ROOT / "output"
+
+POOLS = {
+    "olympic": {
+        "label": "Olympic Pool",
+        "template": ROOT / "Olympic Pool Spring 2026 Hours.pptx",
+        "match": re.compile(r"SWRC\s+Olympic\s+Pool", re.I),
+    },
+    "patio": {
+        "label": "Patio Pool",
+        "template": ROOT / "Patio Pool Spring 2026 Hours.pptx",
+        "match": re.compile(
+            r"SWRC\s+(?:Fixed\s+Depth\s+)?Patio\s+Pool", re.I
+        ),
+    },
 }
 
-ALIASES = {
-    "Olympic Pool": ("olympic pool",),
-    "Patio Pool": ("patio pool", "fixed depth patio pool"),
-}
-
-MONTHS = (
-    "January|February|March|April|May|June|July|August|"
-    "September|October|November|December"
-)
-DATE_RE = re.compile(
-    rf"^({MONTHS})\s+(\d{{1,2}}),\s*(\d{{4}})", re.I
-)
-EVENT_RE = re.compile(
-    r"^(\d{1,2}:\d{2}\s*(?:am|pm))\s*-\s*"
-    r"(\d{1,2}:\d{2}\s*(?:am|pm))\s*\|\s*\|\s*(.+)$", re.I
+TIME_RANGE_RE = re.compile(
+    r"(?P<start>\d{1,2}:\d{2}\s*[ap]\.?m\.?)"
+    r"\s*-\s*"
+    r"(?P<end>\d{1,2}:\d{2}\s*[ap]\.?m\.?)",
+    re.I,
 )
 
+DATE_PATTERNS = [
+    re.compile(
+        r"\b(January|February|March|April|May|June|July|August|"
+        r"September|October|November|December)\s+"
+        r"(\d{1,2})(?:,?\s+(\d{4}))?\b",
+        re.I,
+    ),
+    re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b"),
+]
 
-def scrape_week(monday):
-    """Read calendar text and keep entries for the requested week."""
-    collected = []
+WEEKDAYS = [
+    "Monday", "Tuesday", "Wednesday", "Thursday",
+    "Friday", "Saturday", "Sunday",
+]
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
+
+def normalize_time(value):
+    """Normalize calendar time text to a readable format."""
+    value = re.sub(r"\s+", " ", value.strip().lower())
+    value = value.replace(".", "")
+    parsed = datetime.strptime(value, "%I:%M %p")
+    return parsed.strftime("%-I:%M %p")
+
+
+def parse_time_range(line):
+    match = TIME_RANGE_RE.search(line)
+    if not match:
+        return None
+
+    try:
+        start = normalize_time(match.group("start"))
+        end = normalize_time(match.group("end"))
+    except ValueError:
+        return None
+
+    return f"{start} - {end}"
+
+
+def parse_date_from_line(line, default_year):
+    """Return a date if the line contains a recognizable date."""
+    iso = re.search(r"\b(\d{4})-(\d{2})-(\d{2})\b", line)
+    if iso:
         try:
-            page.goto(URL, wait_until="domcontentloaded", timeout=60000)
-            try:
-                page.wait_for_load_state("networkidle", timeout=10000)
-            except PlaywrightTimeoutError:
-                pass
-
-            for selector in (
-                "button.fc-listWeek-button",
-                "button[title*='list']",
-                "button[aria-label*='list']",
-            ):
-                try:
-                    button = page.locator(selector).first
-                    if button.count() and button.is_visible():
-                        button.click(timeout=1500)
-                        page.wait_for_timeout(500)
-                        break
-                except Exception:
-                    pass
-
-            def body_text():
-                return page.locator("body").inner_text()
-
-            def calendar_title():
-                for selector in (".fc-toolbar-title", "h2", "h1"):
-                    try:
-                        value = page.locator(selector).first.inner_text(timeout=700)
-                        if re.search(MONTHS, value, re.I):
-                            return value.strip()
-                    except Exception:
-                        pass
-                return ""
-
-            for _ in range(24):
-                match = re.search(
-                    rf"({MONTHS})\s+(\d{{4}})", calendar_title(), re.I
-                )
-                if not match:
-                    break
-                shown = datetime.strptime(match.group(0), "%B %Y")
-                if (shown.year, shown.month) == (monday.year, monday.month):
-                    break
-                selector = (
-                    "button.fc-prev-button"
-                    if (shown.year, shown.month) > (monday.year, monday.month)
-                    else "button.fc-next-button"
-                )
-                try:
-                    page.locator(selector).click(timeout=1500)
-                    page.wait_for_timeout(350)
-                except Exception:
-                    break
-
-            collected.append(body_text())
-
-            target = re.compile(
-                rf"{re.escape(monday.strftime('%B'))}\s+{monday.day},\s*"
-                rf"{monday.year}", re.I
+            return date(
+                int(iso.group(1)), int(iso.group(2)), int(iso.group(3))
             )
+        except ValueError:
+            return None
 
-            if not any(target.search(t) for t in collected):
-                for _ in range(10):
-                    try:
-                        page.locator("button.fc-prev-button").click(timeout=1000)
-                        page.wait_for_timeout(250)
-                        collected.append(body_text())
-                        if any(target.search(t) for t in collected):
-                            break
-                    except Exception:
-                        break
+    month_match = re.search(
+        r"\b(January|February|March|April|May|June|July|August|"
+        r"September|October|November|December)\s+"
+        r"(\d{1,2})(?:,?\s+(\d{4}))?\b",
+        line,
+        re.I,
+    )
+    if month_match:
+        month = datetime.strptime(month_match.group(1), "%B").month
+        day = int(month_match.group(2))
+        year = int(month_match.group(3) or default_year)
+        try:
+            return date(year, month, day)
+        except ValueError:
+            return None
 
-                for _ in range(12):
-                    try:
-                        page.locator("button.fc-next-button").click(timeout=1000)
-                        page.wait_for_timeout(250)
-                        collected.append(body_text())
-                        if any(target.search(t) for t in collected):
-                            break
-                    except Exception:
-                        break
-        finally:
+    return None
+
+
+def fetch_calendar_text():
+    """
+    First try the page's rendered text, because the calendar may be
+    populated by JavaScript. Fall back to the directly returned HTML.
+    """
+    rendered_text = ""
+
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch()
+            page = browser.new_page()
+            page.goto(
+                CALENDAR_URL,
+                wait_until="domcontentloaded",
+                timeout=60000,
+            )
+            page.wait_for_timeout(2500)
+            rendered_text = page.locator("body").inner_text(timeout=15000)
             browser.close()
+    except Exception as exc:
+        print(
+            "Notice: rendered-calendar retrieval failed; "
+            f"trying direct HTML instead ({exc})"
+        )
 
+    if rendered_text and (
+        "SWRC Olympic Pool" in rendered_text
+        or "SWRC Fixed Depth Patio Pool" in rendered_text
+        or "SWRC Patio Pool" in rendered_text
+    ):
+        return rendered_text
+
+    response = requests.get(
+        CALENDAR_URL,
+        timeout=45,
+        headers={"User-Agent": "RutgersPoolScheduleGenerator/1.0"},
+    )
+    response.raise_for_status()
+    soup = BeautifulSoup(response.text, "html.parser")
+    direct_text = soup.get_text("\n", strip=True)
+
+    if direct_text:
+        return direct_text
+
+    raise RuntimeError("The Rutgers calendar returned no readable text.")
+
+
+def parse_calendar(text, week_start):
+    """
+    Parse dated calendar sections and pool event lines.
+
+    Rutgers entries commonly look like:
+    07:00 am - 10:00 pm | | Recreation Swim -
+    SWRC Fixed Depth Patio Pool
+
+    If an event has no reliably associated date, it is not assigned
+    to a day by guessing.
+    """
     events = []
-    for text in collected:
-        current_day = None
-        for raw in text.splitlines():
-            line = " ".join(raw.split()).strip()
-            dm = DATE_RE.match(line)
-            if dm:
-                try:
-                    current_day = datetime.strptime(
-                        f"{dm.group(1)} {dm.group(2)} {dm.group(3)}",
-                        "%B %d %Y",
-                    ).date()
-                except ValueError:
-                    current_day = None
+    current_date = None
+    year = week_start.year
+
+    lines = [
+        re.sub(r"\s+", " ", line).strip()
+        for line in text.splitlines()
+        if line.strip()
+    ]
+
+    for line in lines:
+        parsed_date = parse_date_from_line(line, year)
+        if parsed_date:
+            current_date = parsed_date
+
+        if not TIME_RANGE_RE.search(line):
+            continue
+
+        # If the date is embedded in the same line as the event,
+        # use it. Otherwise use the latest recognized date heading.
+        event_date = parsed_date or current_date
+
+        if event_date is None:
+            continue
+
+        for pool_key, pool_info in POOLS.items():
+            if not pool_info["match"].search(line):
                 continue
 
-            em = EVENT_RE.match(line)
-            if not em or current_day is None:
-                continue
-            if not monday <= current_day <= monday + timedelta(days=6):
-                continue
-
-            detail = em.group(3).strip()
-            low = detail.casefold()
-            if "swrc" not in low or not ("pool" in low or "swim" in low):
+            time_range = parse_time_range(line)
+            if not time_range:
                 continue
 
             events.append({
-                "date": current_day,
-                "start": em.group(1).lower(),
-                "end": em.group(2).lower(),
-                "detail": detail,
+                "date": event_date,
+                "pool": pool_key,
+                "hours": time_range,
+                "source_line": line,
             })
 
-    unique = {
-        (e["date"], e["start"], e["end"], e["detail"]): e
-        for e in events
-    }
-    return sorted(
-        unique.values(),
-        key=lambda e: (e["date"], e["start"], e["detail"].casefold()),
-    )
-
-
-def fmt_time(value):
-    try:
-        return datetime.strptime(value.upper(), "%I:%M %p").strftime("%I:%M%p").lstrip("0").replace(":00", "")
-    except ValueError:
-        return value.upper().replace(" ", "")
-
-
-def pool_entries(events, pool):
-    matches = []
+    # Deduplicate identical events that may appear in overlapping
+    # calendar sections.
+    unique = {}
     for event in events:
-        low = event["detail"].casefold()
-        if any(alias in low for alias in ALIASES[pool]):
-            matches.append(event)
-    return matches
+        key = (
+            event["date"],
+            event["pool"],
+            event["hours"],
+            event["source_line"],
+        )
+        unique[key] = event
+
+    return list(unique.values())
 
 
-def write_pdf(pool, monday, events):
-    template = TEMPLATES[pool]
-    if not template.exists():
+def monday_date(value):
+    try:
+        result = date.fromisoformat(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "Enter the week start as YYYY-MM-DD."
+        ) from exc
+
+    if result.weekday() != 0:
+        raise argparse.ArgumentTypeError(
+            f"{result.isoformat()} is not a Monday. "
+            "Choose the Monday of the schedule week."
+        )
+
+    return result
+
+
+def pool_events_for_week(events, pool_key, week_start):
+    end_date = week_start + timedelta(days=6)
+    return [
+        event for event in events
+        if event["pool"] == pool_key
+        and week_start <= event["date"] <= end_date
+    ]
+
+
+def replace_text_in_shape(shape, replacement):
+    """Replace a shape's text while retaining its first run's styling."""
+    if not shape.has_text_frame:
+        return False
+
+    paragraph_runs = [
+        run
+        for paragraph in shape.text_frame.paragraphs
+        for run in paragraph.runs
+    ]
+
+    if paragraph_runs:
+        paragraph_runs[0].text = replacement
+        for run in paragraph_runs[1:]:
+            run.text = ""
+    else:
+        shape.text_frame.text = replacement
+
+    return True
+
+
+def update_template(pool_key, week_start, events):
+    """
+    Update the supplied PowerPoint conservatively.
+
+    The template must contain one recognizable day/hour text field
+    for each day of the week. If that layout cannot be identified,
+    stop rather than output a misleading schedule.
+    """
+    info = POOLS[pool_key]
+    template = info["template"]
+
+    if not template.is_file():
         raise RuntimeError(f"Template not found: {template.name}")
 
     presentation = Presentation(str(template))
-    slide = presentation.slides[0]
-    slots = []
+    days = [
+        week_start + timedelta(days=i)
+        for i in range(7)
+    ]
 
-    for shape in slide.shapes:
-        if not getattr(shape, "has_text_frame", False):
+    # Collect all text-bearing shapes across all slides.
+    shapes = []
+    for slide in presentation.slides:
+        for shape in slide.shapes:
+            if shape.has_text_frame:
+                shapes.append(shape)
+
+    # Identify candidate fields by their existing day labels or
+    # time/hour placeholders. Do not change unrelated text.
+    candidates = []
+    for shape in shapes:
+        original = shape.text.strip()
+        if not original:
             continue
-        content = shape.text.strip()
-        if not content:
-            continue
-        if content.casefold() in ("olympic pool", "patio pool"):
-            shape.text = pool.upper()
-        elif content.casefold() == "swim meet" or re.search(
-            r"\b\d{1,2}\s*(?:am|pm)\b", content, re.I
+
+        lower = original.lower()
+        if any(day.lower() in lower for day in WEEKDAYS):
+            candidates.append(shape)
+        elif (
+            "swim meet" in lower
+            or "closed" in lower
+            or "hours not listed" in lower
+            or TIME_RANGE_RE.search(original)
         ):
-            slots.append(shape)
+            candidates.append(shape)
 
-    slots.sort(key=lambda shape: shape.top)
-    if len(slots) != 7:
+    if len(candidates) < 7:
         raise RuntimeError(
-            f"Expected 7 schedule boxes in {template.name}; found {len(slots)}."
+            f"Could not confidently identify seven daily fields in "
+            f"{template.name} (found {len(candidates)} candidates). "
+            "No PDF was created. The template layout needs to be mapped."
         )
 
-    for index, shape in enumerate(slots):
-        day = monday + timedelta(days=index)
-        todays = [e for e in events if e["date"] == day]
-        lines = []
+    # Match each date to a shape that explicitly identifies that
+    # weekday, where possible.
+    assignments = {}
+    unused = list(candidates)
 
-        for event in todays:
-            line = f"{fmt_time(event['start'])} - {fmt_time(event['end'])}"
-            if "swim meet" in event["detail"].casefold():
-                line += "  Swim Meet"
-            lines.append(line)
+    for day in days:
+        weekday = day.strftime("%A")
+        matching = [
+            shape for shape in unused
+            if re.search(rf"\b{weekday}\b", shape.text, re.I)
+        ]
+        if matching:
+            assignments[day] = matching[0]
+            unused.remove(matching[0])
 
-        if not lines:
-            lines = ["Hours not listed"]
+    # Remaining fields are assigned in their original template order.
+    for day in days:
+        if day in assignments:
+            continue
+        if not unused:
+            raise RuntimeError(
+                f"Unable to map all seven days in {template.name}."
+            )
+        assignments[day] = unused.pop(0)
 
-        frame = shape.text_frame
-        frame.clear()
-        for i, line in enumerate(lines):
-            paragraph = frame.paragraphs[0] if i == 0 else frame.add_paragraph()
-            paragraph.text = line
-            paragraph.alignment = 1
-            for run in paragraph.runs:
-                run.font.name = "Arial"
+    by_date = {}
+    for event in events:
+        by_date.setdefault(event["date"], []).append(event["hours"])
 
-    OUT.mkdir(exist_ok=True)
-    stem = f"{pool.replace(' ', '_')}_{monday.isoformat()}"
-    pptx_path = OUT / f"{stem}.pptx"
-    presentation.save(pptx_path)
+    for day in days:
+        shape = assignments[day]
+        hours = sorted(set(by_date.get(day, [])))
 
+        if len(hours) == 1:
+            display = f"{day.strftime('%A')}\n{hours[0]}"
+        elif len(hours) > 1:
+            display = (
+                f"{day.strftime('%A')}\n"
+                + "\n".join(hours)
+                + "\nVERIFY: multiple calendar entries"
+            )
+        else:
+            # A missing event is not proof that the pool is closed.
+            display = (
+                f"{day.strftime('%A')}\n"
+                "VERIFY: hours not found on calendar"
+            )
+
+        replace_text_in_shape(shape, display)
+
+    OUTPUT.mkdir(parents=True, exist_ok=True)
+    safe_pool_name = info["label"].replace(" ", "_")
+    pptx_path = OUTPUT / f"{safe_pool_name}_{week_start.isoformat()}.pptx"
+    presentation.save(str(pptx_path))
+
+    return pptx_path
+
+
+def export_pdf(pptx_path):
+    """Export a PowerPoint file to PDF using LibreOffice."""
     result = subprocess.run(
         [
-            "libreoffice", "--headless", "--convert-to", "pdf",
-            "--outdir", str(OUT), str(pptx_path),
+            "libreoffice",
+            "--headless",
+            "--convert-to", "pdf",
+            "--outdir", str(OUTPUT),
+            str(pptx_path),
         ],
-        capture_output=True, text=True, timeout=90,
+        capture_output=True,
+        text=True,
+        timeout=120,
     )
-    pdf_path = OUT / f"{stem}.pdf"
+
+    pdf_path = OUTPUT / f"{pptx_path.stem}.pdf"
+
     if result.returncode != 0 or not pdf_path.exists():
-        raise RuntimeError(f"PDF export failed: {result.stderr[-1000:]}")
+        raise RuntimeError(
+            "LibreOffice could not export the PDF.\n"
+            f"stdout: {result.stdout}\n"
+            f"stderr: {result.stderr}"
+        )
+
     return pdf_path
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--week-start", required=True)
-    parser.add_argument("--olympic", required=True)
-    parser.add_argument("--patio", required=True)
+    parser.add_argument("--olympic", default="true")
+    parser.add_argument("--patio", default="true")
     args = parser.parse_args()
 
-    monday = datetime.strptime(args.week_start, "%Y-%m-%d").date()
-    if monday.weekday() != 0:
-        raise ValueError("The selected week must start on a Monday.")
+    week_start = monday_date(args.week_start)
 
     selected = []
-    if args.olympic.lower() == "true":
-        selected.append("Olympic Pool")
-    if args.patio.lower() == "true":
-        selected.append("Patio Pool")
-    if not selected:
-        raise ValueError("Select at least one pool.")
+    if args.olympic.lower() in ("true", "1", "yes"):
+        selected.append("olympic")
+    if args.patio.lower() in ("true", "1", "yes"):
+        selected.append("patio")
 
-    events = scrape_week(monday)
+    if not selected:
+        raise RuntimeError("No pool was selected for generation.")
+
+    print(f"Reading official calendar: {CALENDAR_URL}")
+    print(f"Requested week: {week_start} through "
+          f"{week_start + timedelta(days=6)}")
+
+    text = fetch_calendar_text()
+    events = parse_calendar(text, week_start)
+
+    # Validate that the page yielded identifiable SWRC pool entries
+    # before attempting to edit any template.
     if not events:
         raise RuntimeError(
-            "No SWRC pool events were read. Check the official calendar; "
-            "the calendar layout may have changed."
+            "No dated SWRC pool events were parsed. "
+            "The calendar layout may have changed, or dates may not "
+            "be associated with event lines. No schedules were created."
         )
 
-    for pool in selected:
-        entries = pool_entries(events, pool)
-        pdf = write_pdf(pool, monday, entries)
-        print(f"Created {pdf}")
+    print(f"Parsed {len(events)} dated SWRC pool event(s).")
+    OUTPUT.mkdir(parents=True, exist_ok=True)
 
-    report = OUT / "generation-report.txt"
-    report.write_text(
-        f"Week starting: {monday.isoformat()}\n"
-        f"Official source: {URL}\n"
-        "Any 'Hours not listed' row means no matching entry was found by "
-        "the scraper. Verify missing hours and closures against the official "
-        "calendar before using the PDFs.\n",
-        encoding="utf-8",
+    for pool_key in selected:
+        week_events = pool_events_for_week(
+            events, pool_key, week_start
+        )
+
+        print(
+            f"{POOLS[pool_key]['label']}: "
+            f"{len(week_events)} event(s) in requested week"
+        )
+
+        pptx_path = update_template(
+            pool_key, week_start, week_events
+        )
+        pdf_path = export_pdf(pptx_path)
+
+        print(f"Created PowerPoint: {pptx_path}")
+        print(f"Created PDF: {pdf_path}")
+
+    print(
+        "Generation finished. Review every day marked "
+        "'VERIFY: hours not found on calendar' before using the PDFs."
     )
 
 
