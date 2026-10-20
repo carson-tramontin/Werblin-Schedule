@@ -285,20 +285,19 @@ def replace_text_in_shape(shape, replacement):
 
 
 
+
 def update_template(pool_key, week_start, events):
     """
     Update the seven existing hours text boxes in the supplied template.
-    The background image, title, QR codes, and other design elements
-    remain untouched.
     """
     if pool_key == "olympic":
-    label = "Olympic Pool"
-    template = ROOT / "Olympic Pool Spring 2026 Hours.pptx"
-elif pool_key == "patio":
-    label = "Patio Pool"
-    template = ROOT / "Patio Pool Spring 2026 Hours.pptx"
-else:
-    raise RuntimeError(f"Unknown pool key: {pool_key}")
+        label = "Olympic Pool"
+        template = ROOT / "Olympic Pool Spring 2026 Hours.pptx"
+    elif pool_key == "patio":
+        label = "Patio Pool"
+        template = ROOT / "Patio Pool Spring 2026 Hours.pptx"
+    else:
+        raise RuntimeError(f"Unknown pool key: {pool_key}")
 
     if not template.is_file():
         raise RuntimeError(f"Template not found: {template.name}")
