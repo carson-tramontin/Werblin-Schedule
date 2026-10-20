@@ -7,12 +7,14 @@ Reads pool-only hours from the official Rutgers Recreation calendar,
 updates the supplied PowerPoint templates, and exports separate PDFs.
 
 Rules:
-- No calendar entries for a pool on a day means CLOSED.
-- Overlapping or back-to-back sessions are merged.
-- Separate sessions remain on one line with clear spacing.
-- Hours text is centered horizontally and vertically.
-- Font size adjusts to fit the existing hours box.
-- If the calendar cannot be parsed at all, generation stops.
+- No entries for a pool on a day means CLOSED.
+- Overlapping and back-to-back sessions are merged.
+- Separate sessions stay on one line with clear spacing.
+- All time entries use one consistent font size, calculated from
+  the longest line across the selected pools.
+- CLOSED remains large and prominent.
+- Text is centered horizontally and vertically.
+- Stops if no dated SWRC pool events can be parsed.
 """
 
 import argparse
@@ -37,6 +39,18 @@ CALENDAR_URL = (
 
 ROOT = Path(__file__).resolve().parent
 OUTPUT = ROOT / "output"
+
+# Font settings, in points.
+MAX_TIME_FONT_SIZE = 36
+MIN_TIME_FONT_SIZE = 18
+CLOSED_FONT_SIZE = 36
+
+# Approximate character width used to estimate whether a line fits.
+# The font size is capped conservatively to avoid clipping.
+ESTIMATED_CHARACTER_WIDTH = 0.52
+
+# Extra space between separate sessions on the same line.
+SESSION_SEPARATOR = "     "
 
 POOLS = {
     "olympic": {
@@ -86,6 +100,7 @@ def parse_time_range(line):
 def parse_date_from_line(line, default_year):
     """Return a date if the line contains a recognizable date."""
     iso = re.search(r"\b(\d{4})-(\d{2})-(\d{2})\b", line)
+
     if iso:
         try:
             return date(
@@ -103,6 +118,7 @@ def parse_date_from_line(line, default_year):
         line,
         re.I,
     )
+
     if month_match:
         month = datetime.strptime(
             month_match.group(1), "%B"
@@ -120,8 +136,8 @@ def parse_date_from_line(line, default_year):
 
 def fetch_calendar_text():
     """
-    First try the rendered page because the calendar may be populated
-    by JavaScript. Fall back to directly returned HTML.
+    Try the rendered page first because the calendar may use JavaScript.
+    Fall back to directly returned HTML if necessary.
     """
     rendered_text = ""
     browser = None
@@ -141,6 +157,7 @@ def fetch_calendar_text():
             )
             browser.close()
             browser = None
+
     except Exception as exc:
         if browser is not None:
             try:
@@ -186,8 +203,8 @@ def parse_calendar(text, week_start):
     """
     Parse dated calendar sections and pool event lines.
 
-    Events without a reliably associated date are not assigned to
-    a day by guessing.
+    Events without a reliably associated date are not assigned to a
+    day by guessing.
     """
     events = []
     current_date = None
@@ -229,7 +246,7 @@ def parse_calendar(text, week_start):
                 "source_line": line,
             })
 
-    # Remove duplicate calendar events.
+    # Deduplicate identical events in overlapping calendar sections.
     unique = {}
 
     for event in events:
@@ -279,7 +296,7 @@ def time_to_minutes(value):
 
 
 def format_display_time(minutes):
-    """Format time compactly, such as 10AM or 4:30PM."""
+    """Format time compactly, for example 10AM or 4:30PM."""
     minutes = minutes % (24 * 60)
     hour24, minute = divmod(minutes, 60)
     suffix = "AM" if hour24 < 12 else "PM"
@@ -293,7 +310,7 @@ def format_display_time(minutes):
 
 def merge_time_ranges(hours):
     """
-    Merge overlapping or back-to-back time ranges.
+    Merge overlapping or back-to-back ranges.
 
     Genuine gaps remain separate sessions.
     """
@@ -315,7 +332,6 @@ def merge_time_ranges(hours):
         except ValueError:
             continue
 
-        # Support an overnight range if one ever appears.
         if end < start:
             end += 24 * 60
 
@@ -342,17 +358,140 @@ def merge_time_ranges(hours):
     ]
 
 
-def set_centered_text(shape, replacement):
+def get_daily_display(pool_key, day, events):
+    """Build one day's display string, merging sessions as needed."""
+    day_events = [
+        event
+        for event in events
+        if event.get("pool") == pool_key
+        and event.get("date") == day
+        and event.get("hours")
+    ]
+
+    merged_hours = merge_time_ranges(
+        [event["hours"] for event in day_events]
+    )
+
+    if not merged_hours:
+        return "CLOSED"
+
+    return SESSION_SEPARATOR.join(merged_hours)
+
+
+def get_hours_box(presentation):
+    """Find the seven existing hours boxes in a template."""
+    if len(presentation.slides) != 1:
+        raise RuntimeError(
+            "Expected one slide in the template; "
+            f"found {len(presentation.slides)}."
+        )
+
+    slide = presentation.slides[0]
+
+    expected_names = {
+        f"Google Shape;{number};p1"
+        for number in range(91, 98)
+    }
+
+    boxes = {
+        shape.name: shape
+        for shape in slide.shapes
+        if shape.name in expected_names and shape.has_text_frame
+    }
+
+    missing = expected_names - set(boxes)
+
+    if missing:
+        raise RuntimeError(
+            "Template is missing expected hours boxes: "
+            f"{sorted(missing)}"
+        )
+
+    return [
+        boxes[f"Google Shape;{number};p1"]
+        for number in range(91, 98)
+    ]
+
+
+def calculate_shared_time_font_size(selected, week_start, events):
     """
-    Replace the hours while preserving the template's original font
-    styling. Center text horizontally and vertically and size it to fit.
+    Calculate one font size for all time entries across the selected
+    pools. The longest line in the narrowest hours box determines size.
+    """
+    longest_line = ""
+    narrowest_width_pt = None
+
+    days = [
+        week_start + timedelta(days=i)
+        for i in range(7)
+    ]
+
+    for pool_key in selected:
+        template = POOLS[pool_key]["template"]
+
+        if not template.is_file():
+            raise RuntimeError(
+                f"Template not found: {template.name}"
+            )
+
+        presentation = Presentation(str(template))
+        boxes = get_hours_box(presentation)
+
+        for day, shape in zip(days, boxes):
+            display = get_daily_display(pool_key, day, events)
+
+            if display == "CLOSED":
+                continue
+
+            if len(display) > len(longest_line):
+                longest_line = display
+
+            available_width_pt = (
+                shape.width
+                - Inches(0.12)
+            ) / 12700
+
+            if (
+                narrowest_width_pt is None
+                or available_width_pt < narrowest_width_pt
+            ):
+                narrowest_width_pt = available_width_pt
+
+    if not longest_line or not narrowest_width_pt:
+        return MAX_TIME_FONT_SIZE
+
+    estimated_size = narrowest_width_pt / (
+        len(longest_line) * ESTIMATED_CHARACTER_WIDTH
+    )
+
+    chosen_size = min(
+        MAX_TIME_FONT_SIZE,
+        estimated_size,
+    )
+
+    chosen_size = max(
+        MIN_TIME_FONT_SIZE,
+        chosen_size,
+    )
+
+    print(
+        "Shared time font size: "
+        f"{chosen_size:.1f} pt "
+        f"(longest line: {longest_line})"
+    )
+
+    return chosen_size
+
+
+def set_centered_text(shape, replacement, font_size):
+    """
+    Replace the text while retaining the first run's font styling.
+    Center the text horizontally and vertically.
     """
     if not shape.has_text_frame:
         return
 
     text_frame = shape.text_frame
-
-    # Center the complete line in the existing text box.
     text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
     text_frame.word_wrap = False
     text_frame.margin_left = Inches(0.06)
@@ -367,7 +506,6 @@ def set_centered_text(shape, replacement):
     else:
         paragraph = paragraphs[0]
 
-    # Reuse the first existing run so the original font and color remain.
     all_runs = [
         run
         for item in paragraphs
@@ -384,53 +522,29 @@ def set_centered_text(shape, replacement):
         first_run = paragraph.add_run()
         first_run.text = replacement
 
-    # Remove extra paragraph spacing and center every paragraph.
-    for item in paragraphs:
-        item.alignment = PP_ALIGN.CENTER
-        item.space_before = Pt(0)
-        item.space_after = Pt(0)
-        item.line_spacing = 1.0
+    # Remove leftover paragraphs, keeping the text on a single line.
+    for item in paragraphs[1:]:
+        for run in item.runs:
+            run.text = ""
 
     paragraph.alignment = PP_ALIGN.CENTER
     paragraph.space_before = Pt(0)
     paragraph.space_after = Pt(0)
     paragraph.line_spacing = 1.0
 
-    # Preserve the original 36 pt size where possible. Reduce it only
-    # when a longer line needs extra room to fit inside the box.
-    original_size = (
-        first_run.font.size.pt
-        if first_run.font.size
-        else 36.0
-    )
-    max_size = min(36.0, original_size)
-    min_size = 18.0
-
-    available_width_pt = (
-        shape.width
-        - text_frame.margin_left
-        - text_frame.margin_right
-    ) / 12700
-
-    # Approximate text width conservatively so long session lines
-    # fit without wrapping or clipping.
-    estimated_character_width = 0.52
-    if replacement:
-        fit_size = available_width_pt / (
-            len(replacement) * estimated_character_width
-        )
+    # CLOSED stays large; all time entries share one calculated size.
+    if replacement == "CLOSED":
+        first_run.font.size = Pt(CLOSED_FONT_SIZE)
     else:
-        fit_size = max_size
-
-    chosen_size = max(
-        min_size,
-        min(max_size, fit_size),
-    )
-
-    first_run.font.size = Pt(chosen_size)
+        first_run.font.size = Pt(font_size)
 
 
-def update_template(pool_key, week_start, events):
+def update_template(
+    pool_key,
+    week_start,
+    events,
+    shared_time_font_size,
+):
     """Update the seven hours boxes without redesigning the template."""
     if pool_key not in POOLS:
         raise RuntimeError(f"Unknown pool key: {pool_key}")
@@ -445,78 +559,23 @@ def update_template(pool_key, week_start, events):
         )
 
     presentation = Presentation(str(template))
-
-    if len(presentation.slides) != 1:
-        raise RuntimeError(
-            f"Expected one slide in {template.name}; "
-            f"found {len(presentation.slides)}."
-        )
-
-    slide = presentation.slides[0]
-
-    # These are the seven actual hours boxes in the templates.
-    expected_names = {
-        f"Google Shape;{number};p1"
-        for number in range(91, 98)
-    }
-
-    hour_boxes = {
-        shape.name: shape
-        for shape in slide.shapes
-        if shape.name in expected_names and shape.has_text_frame
-    }
-
-    missing = expected_names - set(hour_boxes)
-
-    if missing:
-        raise RuntimeError(
-            f"Template {template.name} is missing expected hours "
-            f"boxes: {sorted(missing)}"
-        )
-
-    # Keep the original top-to-bottom weekday order.
-    ordered_boxes = [
-        hour_boxes[f"Google Shape;{number};p1"]
-        for number in range(91, 98)
-    ]
+    boxes = get_hours_box(presentation)
 
     days = [
         week_start + timedelta(days=i)
         for i in range(7)
     ]
 
-    events_by_date = {}
+    for day, shape in zip(days, boxes):
+        display = get_daily_display(pool_key, day, events)
 
-    for event in events:
-        if event.get("pool") == pool_key:
-            events_by_date.setdefault(
-                event["date"], []
-            ).append(event)
-
-    for day, shape in zip(days, ordered_boxes):
-        day_events = events_by_date.get(day, [])
-
-        hours = [
-            event["hours"]
-            for event in day_events
-            if event.get("hours")
-        ]
-
-        merged_hours = merge_time_ranges(hours)
-
-        if not merged_hours:
-            # User-approved rule: no entries means CLOSED.
-            display = "CLOSED"
-        else:
-            # Keep all separate sessions on ONE line with clear spacing.
-            # Back-to-back sessions have already been merged above.
-            display = "     ".join(merged_hours)
-
-        set_centered_text(shape, display)
-
-        print(
-            f"{label} — {day.strftime('%A')}: {display}"
+        set_centered_text(
+            shape,
+            display,
+            shared_time_font_size,
         )
+
+        print(f"{label} — {day.strftime('%A')}: {display}")
 
     OUTPUT.mkdir(parents=True, exist_ok=True)
 
@@ -575,9 +634,7 @@ def main():
         selected.append("patio")
 
     if not selected:
-        raise RuntimeError(
-            "No pool was selected for generation."
-        )
+        raise RuntimeError("No pool was selected for generation.")
 
     print(f"Reading official calendar: {CALENDAR_URL}")
     print(
@@ -588,8 +645,6 @@ def main():
     calendar_text = fetch_calendar_text()
     events = parse_calendar(calendar_text, week_start)
 
-    # If nothing at all can be parsed, stop instead of marking every
-    # day CLOSED because of a calendar retrieval or layout failure.
     if not events:
         raise RuntimeError(
             "No dated SWRC pool events were parsed. The calendar may "
@@ -600,9 +655,18 @@ def main():
     print(f"Parsed {len(events)} dated SWRC pool event(s).")
     OUTPUT.mkdir(parents=True, exist_ok=True)
 
+    # Calculate the same time font size before creating either PDF.
+    shared_time_font_size = calculate_shared_time_font_size(
+        selected,
+        week_start,
+        events,
+    )
+
     for pool_key in selected:
         week_events = pool_events_for_week(
-            events, pool_key, week_start
+            events,
+            pool_key,
+            week_start,
         )
 
         print(
@@ -611,14 +675,20 @@ def main():
         )
 
         pptx_path = update_template(
-            pool_key, week_start, week_events
+            pool_key,
+            week_start,
+            events,
+            shared_time_font_size,
         )
+
         pdf_path = export_pdf(pptx_path)
 
         print(f"Created PowerPoint: {pptx_path}")
         print(f"Created PDF: {pdf_path}")
 
-    print("Generation finished. Review the PDFs before posting.")
+    print(
+        "Generation finished. Review both PDFs before posting."
+    )
 
 
 if __name__ == "__main__":
