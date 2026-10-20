@@ -324,8 +324,10 @@ def update_template(pool_key, week_start, events):
         # around 7.3 inches. This excludes the title and footer.
         top_inches = shape.top / 914400
 
-        if 2.0 <= top_inches <= 7.3:
-            hour_boxes.append(shape)
+        
+    if 2.0 <= top_inches <= 7.3 and shape.text.strip():
+        hour_boxes.append(shape)
+
 
     hour_boxes.sort(key=lambda shape: shape.top)
 
