@@ -1,141 +1,291 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Rutgers Pool Schedule Generator</title>
-  <style>
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-      background: #f4f5f7;
-      color: #202124;
-    }
-    header {
-      background: #cc0033;
-      color: white;
-      padding: 28px 20px;
-      text-align: center;
-    }
-    header h1 { margin: 0 0 8px; }
-    main {
-      max-width: 720px;
-      margin: 30px auto;
-      padding: 0 16px;
-    }
-    .panel {
-      background: white;
-      border-radius: 12px;
-      padding: 24px;
-      margin-bottom: 18px;
-      box-shadow: 0 2px 8px #0000000d;
-    }
-    label { display: block; margin: 12px 0; }
-    input[type="date"] {
-      padding: 10px;
-      font-size: 16px;
-      width: 100%;
-      max-width: 300px;
-    }
-    .pool {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 12px;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-    }
-    .pool input { width: 18px; height: 18px; }
-    button {
-      width: 100%;
-      padding: 15px;
-      border: 0;
-      border-radius: 8px;
-      background: #cc0033;
-      color: white;
-      font-size: 16px;
-      font-weight: bold;
-      cursor: pointer;
-    }
-    button:hover { background: #a90029; }
-    #status {
-      margin-top: 16px;
-      line-height: 1.6;
-      overflow-wrap: anywhere;
-    }
-    .note { color: #555; font-size: 14px; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rutgers Pool Schedule Generator</title>
+<style>
+:root {
+  --scarlet: #cc0033;
+  --dark: #252936;
+  --muted: #626b7a;
+  --line: #e0e4eb;
+  --background: #f4f6fa;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: Arial, Helvetica, sans-serif;
+  background: var(--background);
+  color: var(--dark);
+}
+header {
+  background: var(--scarlet);
+  color: white;
+  padding: 26px 20px;
+}
+.header-inner, main, footer {
+  max-width: 850px;
+  margin: auto;
+}
+.brand {
+  font-size: 12px;
+  letter-spacing: 2px;
+  font-weight: bold;
+  opacity: .9;
+}
+header h1 {
+  margin: 12px 0 8px;
+  font-size: clamp(25px, 5vw, 36px);
+}
+header p { margin: 0; opacity: .92; }
+main { padding: 25px 16px 40px; }
+.card {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  padding: 24px;
+  margin-bottom: 18px;
+  box-shadow: 0 3px 12px #202b3b08;
+}
+h2 { margin: 0 0 8px; font-size: 21px; }
+h3 { font-size: 16px; margin: 24px 0 12px; }
+.muted { color: var(--muted); line-height: 1.55; }
+label.field-label {
+  display: block;
+  font-weight: bold;
+  margin: 22px 0 9px;
+}
+input[type="date"] {
+  width: 100%;
+  max-width: 320px;
+  padding: 12px;
+  border: 1px solid #cbd1dc;
+  border-radius: 8px;
+  font: inherit;
+}
+.pool-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+}
+.pool-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 16px;
+  cursor: pointer;
+}
+.pool-option:has(input:checked) {
+  border-color: var(--scarlet);
+  background: #fff7f8;
+}
+.pool-option input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--scarlet);
+}
+.pool-name { font-weight: bold; }
+.pool-detail {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+button {
+  font: inherit;
+  font-weight: bold;
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 14px 18px;
+}
+.primary {
+  width: 100%;
+  margin-top: 24px;
+  color: white;
+  background: var(--scarlet);
+  border: 0;
+}
+.primary:hover { background: #a9002a; }
+button:focus-visible, input:focus-visible {
+  outline: 3px solid #3975d5;
+  outline-offset: 3px;
+}
+.status {
+  margin-top: 17px;
+  padding: 14px;
+  background: #f1f4f9;
+  border-radius: 8px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.status strong { display: block; margin-bottom: 5px; }
+.steps {
+  display: grid;
+  gap: 16px;
+  margin-top: 20px;
+}
+.step {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+}
+.number {
+  flex: 0 0 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  background: #fce8ed;
+  color: var(--scarlet);
+  border-radius: 50%;
+  font-weight: bold;
+}
+.step p { margin: 4px 0 0; line-height: 1.45; }
+.tag {
+  display: inline-block;
+  margin-top: 14px;
+  border: 1px solid #e5c5cd;
+  border-radius: 30px;
+  padding: 5px 10px;
+  color: #8e1733;
+  font-size: 12px;
+  font-weight: bold;
+}
+footer {
+  padding: 0 16px 30px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+@media (max-width: 480px) {
+  .card { padding: 18px; }
+}
+</style>
 </head>
 <body>
-  <header>
-    <h1>Rutgers Pool Schedule Generator</h1>
-    <div>Rutgers Recreation · Weekly Pool Hours</div>
-  </header>
+<header>
+  <div class="header-inner">
+    <div class="brand">RUTGERS UNIVERSITY · RECREATION</div>
+    <h1>Pool Schedule Generator</h1>
+    <p>Weekly operating hours · Werblin Recreation Center</p>
+  </div>
+</header>
 
-  <main>
-    <section class="panel">
-      <h2>Generate weekly schedules</h2>
-      <p>Select the week beginning on Monday and the pools you need.</p>
+<main>
+  <section class="card">
+    <h2>Build your weekly schedules</h2>
+    <p class="muted">
+      Choose the week and pools. The finished tool will retrieve official
+      pool hours and prepare separate printable PDFs.
+    </p>
 
-      <label for="week"><strong>Week beginning</strong></label>
-      <input type="date" id="week" required>
+    <label class="field-label" for="week">Week beginning (Monday)</label>
+    <input type="date" id="week" required>
 
-      <h3>Select pools</h3>
-      <label class="pool">
+    <h3>Which schedules do you need?</h3>
+    <div class="pool-grid">
+      <label class="pool-option">
         <input type="checkbox" id="olympic" checked>
-        <span>Olympic Pool</span>
+        <span>
+          <span class="pool-name">Olympic Pool</span>
+          <span class="pool-detail">Olympic Pool template</span>
+        </span>
       </label>
-      <label class="pool">
+      <label class="pool-option">
         <input type="checkbox" id="patio" checked>
-        <span>Patio Pool</span>
+        <span>
+          <span class="pool-name">Patio Pool</span>
+          <span class="pool-detail">Patio Pool template</span>
+        </span>
       </label>
+    </div>
 
-      <br>
-      <button id="generate">Generate Weekly Schedules</button>
-      <div id="status" role="status" aria-live="polite"></div>
-    </section>
+    <button class="primary" id="generate">Generate Weekly Schedules</button>
+    <div class="status" id="status" role="status" aria-live="polite">
+      <strong>Ready to configure</strong>
+Choose your week and pools. Live calendar retrieval and PDF creation
+are still being connected.
+    </div>
+  </section>
 
-    <section class="panel">
-      <h3>How it works</h3>
-      <p>1. Select your week and pools.</p>
-      <p>2. Retrieve pool-only hours from the Rutgers Recreation calendar.</p>
-      <p>3. Review any missing or unclear hours.</p>
-      <p>4. Create separate portrait PDFs using the original pool templates.</p>
-      <p class="note">
-        Setup in progress: calendar retrieval, PowerPoint templates,
-        and PDF generation are not connected yet.
-      </p>
-    </section>
-  </main>
+  <section class="card">
+    <h2>How the generator will work</h2>
+    <div class="steps">
+      <div class="step">
+        <span class="number">1</span>
+        <p><strong>Retrieve official hours</strong><br>
+        Read pool-specific information from the Rutgers Recreation calendar.</p>
+      </div>
+      <div class="step">
+        <span class="number">2</span>
+        <p><strong>Check the schedule</strong><br>
+        Flag missing or unclear information instead of guessing.</p>
+      </div>
+      <div class="step">
+        <span class="number">3</span>
+        <p><strong>Prepare two PDFs</strong><br>
+        Preserve each pool's existing template and portrait layout.</p>
+      </div>
+    </div>
+    <span class="tag">SETUP IN PROGRESS</span>
+    <p class="muted">
+      This webpage does not yet retrieve live hours or generate PDFs.
+      The Generate button currently validates your selections only.
+    </p>
+    <p><a href="https://recreation.rutgers.edu/recreation-list-calendar?calendar_filter=122"
+      target="_blank" rel="noopener noreferrer">Open the Rutgers Recreation calendar ↗</a></p>
+  </section>
+</main>
 
-  <script>
-    const date = new Date();
-    const monday = new Date(date);
-    monday.setDate(date.getDate() - (date.getDay() + 6) % 7);
-    document.getElementById("week").value =
-      `${monday.getFullYear()}-${String(monday.getMonth()+1).padStart(2,"0")}-${String(monday.getDate()).padStart(2,"0")}`;
+<footer>
+  Rutgers Recreation pool schedules. Always confirm special events,
+  closures, and schedule changes against official Rutgers information.
+</footer>
 
-    document.getElementById("generate").addEventListener("click", () => {
-      const week = document.getElementById("week").value;
-      const pools = [
-        document.getElementById("olympic").checked && "Olympic Pool",
-        document.getElementById("patio").checked && "Patio Pool"
-      ].filter(Boolean);
-      const status = document.getElementById("status");
+<script>
+const dateInput = document.getElementById("week");
+const today = new Date();
+const monday = new Date(today);
+monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+dateInput.value = [
+  monday.getFullYear(),
+  String(monday.getMonth() + 1).padStart(2, "0"),
+  String(monday.getDate()).padStart(2, "0")
+].join("-");
 
-      if (!week) {
-        status.textContent = "Please select a week.";
-      } else if (!pools.length) {
-        status.textContent = "Please select at least one pool.";
-      } else {
-        status.textContent =
-          `Selection saved for this run: week beginning ${week}. ` +
-          `Pools: ${pools.join(", ")}. ` +
-          "Next, we need to connect the Rutgers calendar and PDF generator.";
-      }
-    });
-  </script>
+document.getElementById("generate").addEventListener("click", () => {
+  const week = dateInput.value;
+  const pools = [
+    document.getElementById("olympic").checked ? "Olympic Pool" : null,
+    document.getElementById("patio").checked ? "Patio Pool" : null
+  ].filter(Boolean);
+  const status = document.getElementById("status");
+
+  if (!week) {
+    status.innerHTML = "<strong>Choose a week</strong>Please select a Monday date.";
+    return;
+  }
+  const chosenDate = new Date(week + "T12:00:00");
+  if (chosenDate.getDay() !== 1) {
+    status.innerHTML = "<strong>Please choose Monday</strong>The week must begin on a Monday.";
+    return;
+  }
+  if (pools.length === 0) {
+    status.innerHTML = "<strong>Select a pool</strong>Choose at least one pool.";
+    return;
+  }
+  status.replaceChildren();
+  const heading = document.createElement("strong");
+  heading.textContent = "Your selection is ready";
+  const details = document.createElement("p");
+  details.textContent = "Week beginning " + week + ". Selected: " +
+    pools.join(" and ") + ".";
+  const note = document.createElement("p");
+  note.textContent = "Live retrieval and PDF generation are not connected yet. No schedule has been generated.";
+  status.append(heading, details, note);
+});
+</script>
 </body>
 </html>
