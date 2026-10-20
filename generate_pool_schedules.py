@@ -286,10 +286,10 @@ def replace_text_in_shape(shape, replacement):
 
 
 
+
 def update_template(pool_key, week_start, events):
-    """
-    Update the seven existing hours text boxes in the supplied template.
-    """
+    """Update the seven known hours boxes without changing the design."""
+
     if pool_key == "olympic":
         label = "Olympic Pool"
         template = ROOT / "Olympic Pool Spring 2026 Hours.pptx"
@@ -312,51 +312,44 @@ def update_template(pool_key, week_start, events):
 
     slide = presentation.slides[0]
 
-    # The seven editable hours boxes are identified by their vertical
-    # positions. The background is a picture, not a text box.
-    hour_boxes = []
+    # These are the seven actual hours text boxes in both templates.
+    expected_names = {
+        f"Google Shape;{number};p1"
+        for number in range(91, 98)
+    }
 
-    for shape in slide.shapes:
-        if not shape.has_text_frame:
-            continue
+    hour_boxes = {
+        shape.name: shape
+        for shape in slide.shapes
+        if shape.name in expected_names and shape.has_text_frame
+    }
 
-        # Hours boxes begin around 2.2 inches from the top and end
-        # around 7.3 inches. This excludes the title and footer.
-        top_inches = shape.top / 914400
-
-        
-    if 2.0 <= top_inches <= 7.3 and shape.text.strip():
-        hour_boxes.append(shape)
-
-
-    hour_boxes.sort(key=lambda shape: shape.top)
-
-    if len(hour_boxes) != 7:
-        details = [
-            f"{shape.name}: top={shape.top / 914400:.2f}in, "
-            f"text={shape.text.strip()!r}"
-            for shape in hour_boxes
-        ]
+    missing = expected_names - set(hour_boxes)
+    if missing:
         raise RuntimeError(
-            f"Expected 7 hours boxes in {template.name}, "
-            f"found {len(hour_boxes)}. "
-            f"Detected boxes: {details}"
+            f"Template {template.name} is missing expected hours boxes: "
+            f"{sorted(missing)}"
         )
+
+    # Keep the original top-to-bottom weekday order.
+    ordered_boxes = [
+        hour_boxes[f"Google Shape;{number};p1"]
+        for number in range(91, 98)
+    ]
 
     days = [week_start + timedelta(days=i) for i in range(7)]
 
     events_by_date = {}
     for event in events:
-        events_by_date.setdefault(event["date"], []).append(event)
+        if event.get("pool") == pool_key:
+            events_by_date.setdefault(event["date"], []).append(event)
 
-    for day, shape in zip(days, hour_boxes):
+    for day, shape in zip(days, ordered_boxes):
         day_events = events_by_date.get(day, [])
-
-        # Only use events already filtered for this pool.
         hours = sorted({
             event["hours"]
             for event in day_events
-            if event.get("pool") == pool_key
+            if event.get("hours")
         })
 
         if len(hours) == 1:
@@ -366,25 +359,20 @@ def update_template(pool_key, week_start, events):
         else:
             display = "VERIFY: hours not found"
 
-        # Keep the existing first-run formatting where possible.
-        paragraph = (
-            shape.text_frame.paragraphs[0]
-            if shape.text_frame.paragraphs
-            else None
-        )
+        # Preserve the existing text box and its formatting.
+        text_frame = shape.text_frame
+        if text_frame.paragraphs and text_frame.paragraphs[0].runs:
+            first_paragraph = text_frame.paragraphs[0]
+            first_paragraph.runs[0].text = display
 
-        if paragraph and paragraph.runs:
-            paragraph.runs[0].text = display
-            for run in paragraph.runs[1:]:
+            for run in first_paragraph.runs[1:]:
                 run.text = ""
 
-            # Clear any remaining paragraphs without removing the
-            # text frame or changing the shape's geometry.
-            for extra in shape.text_frame.paragraphs[1:]:
-                for run in extra.runs:
+            for paragraph in text_frame.paragraphs[1:]:
+                for run in paragraph.runs:
                     run.text = ""
         else:
-            shape.text_frame.text = display
+            text_frame.text = display
 
     OUTPUT.mkdir(parents=True, exist_ok=True)
     safe_pool_name = label.replace(" ", "_")
