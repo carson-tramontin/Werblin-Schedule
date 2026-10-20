@@ -8,7 +8,7 @@ updates the supplied PowerPoint templates, and exports separate PDFs.
 
 Safety rules:
 - Never invent pool hours.
-- Never interpret a missing event as confirmed closed hours.
+- A day with no matching pool entries is displayed as CLOSED.
 - Stop if the calendar cannot be parsed or a template cannot be updated
   confidently.
 """
@@ -23,6 +23,8 @@ from pathlib import Path
 import requests
 from bs4 import BeautifulSoup
 from pptx import Presentation
+from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
+from pptx.util import Inches, Pt
 from playwright.sync_api import sync_playwright
 
 
@@ -37,7 +39,7 @@ OUTPUT = ROOT / "output"
 POOLS = {
     "olympic": {
         "label": "Olympic Pool",
-        "": ROOT / "Olympic Pool Spring 2026 Hours.pptx",
+        "template": ROOT / "Olympic Pool Spring 2026 Hours.pptx",
         "match": re.compile(r"SWRC\s+Olympic\s+Pool", re.I),
     },
     "patio": {
@@ -263,28 +265,89 @@ def pool_events_for_week(events, pool_key, week_start):
     ]
 
 
-def replace_text_in_shape(shape, replacement):
-    """Replace a shape's text while retaining its first run's styling."""
-    if not shape.has_text_frame:
-        return False
+def time_to_minutes(value):
+    """Convert a normalized time such as '10:00 AM' to minutes after midnight."""
+    parsed = datetime.strptime(value.strip().upper(), "%I:%M %p")
+    return parsed.hour * 60 + parsed.minute
 
-    paragraph_runs = [
-        run
-        for paragraph in shape.text_frame.paragraphs
-        for run in paragraph.runs
+
+def format_display_time(minutes):
+    """Format minutes after midnight compactly, e.g. 10AM or 4:30PM."""
+    minutes = minutes % (24 * 60)
+    hour24, minute = divmod(minutes, 60)
+    suffix = "AM" if hour24 < 12 else "PM"
+    hour12 = hour24 % 12 or 12
+    if minute:
+        return f"{hour12}:{minute:02d}{suffix}"
+    return f"{hour12}{suffix}"
+
+
+def merge_time_ranges(hours):
+    """Merge overlapping or back-to-back ranges; preserve real gaps."""
+    ranges = []
+    for value in hours:
+        match = TIME_RANGE_RE.search(value)
+        if not match:
+            continue
+        try:
+            start = time_to_minutes(normalize_time(match.group("start")))
+            end = time_to_minutes(normalize_time(match.group("end")))
+        except ValueError:
+            continue
+        # Pool operating hours are expected within one calendar day. Handle
+        # an overnight range safely if one ever appears.
+        if end < start:
+            end += 24 * 60
+        ranges.append((start, end))
+
+    if not ranges:
+        return []
+
+    ranges.sort()
+    merged = [list(ranges[0])]
+    for start, end in ranges[1:]:
+        if start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+
+    return [
+        f"{format_display_time(start)} - {format_display_time(end)}"
+        for start, end in merged
     ]
 
-    if paragraph_runs:
-        paragraph_runs[0].text = replacement
-        for run in paragraph_runs[1:]:
+
+def set_centered_text(shape, replacement):
+    """Update an existing text box and center text without changing its design."""
+    if not shape.has_text_frame:
+        return
+
+    text_frame = shape.text_frame
+    text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+    text_frame.word_wrap = True
+    # Small, consistent insets prevent text from appearing vertically off-center.
+    text_frame.margin_top = Inches(0.04)
+    text_frame.margin_bottom = Inches(0.04)
+    text_frame.margin_left = Inches(0.06)
+    text_frame.margin_right = Inches(0.06)
+
+    paragraphs = list(text_frame.paragraphs)
+    existing_runs = [run for paragraph in paragraphs for run in paragraph.runs]
+    if existing_runs:
+        # Reuse the first run so the template's original font styling is retained.
+        first_run = existing_runs[0]
+        first_run.text = replacement
+        for run in existing_runs[1:]:
             run.text = ""
     else:
-        shape.text_frame.text = replacement
+        first_run = paragraphs[0].add_run()
+        first_run.text = replacement
 
-    return True
-
-
-
+    for paragraph in paragraphs:
+        paragraph.alignment = PP_ALIGN.CENTER
+        paragraph.space_before = Pt(0)
+        paragraph.space_after = Pt(0)
+        paragraph.line_spacing = 1.0
 
 
 def update_template(pool_key, week_start, events):
@@ -346,33 +409,22 @@ def update_template(pool_key, week_start, events):
 
     for day, shape in zip(days, ordered_boxes):
         day_events = events_by_date.get(day, [])
-        hours = sorted({
+        hours = [
             event["hours"]
             for event in day_events
             if event.get("hours")
-        })
+        ]
+        merged_hours = merge_time_ranges(hours)
 
-        if len(hours) == 1:
-            display = hours[0]
-        elif len(hours) > 1:
-            display = "\n".join(hours) + "\nVERIFY: multiple entries"
+        if not merged_hours:
+            # Per the user's operating rule, no calendar entry means closed.
+            display = "CLOSED"
         else:
-            display = "VERIFY: hours not found"
+            # Distinct sessions stay on separate lines; adjacent/overlapping
+            # sessions have already been merged into a single range.
+            display = "\n".join(merged_hours)
 
-        # Preserve the existing text box and its formatting.
-        text_frame = shape.text_frame
-        if text_frame.paragraphs and text_frame.paragraphs[0].runs:
-            first_paragraph = text_frame.paragraphs[0]
-            first_paragraph.runs[0].text = display
-
-            for run in first_paragraph.runs[1:]:
-                run.text = ""
-
-            for paragraph in text_frame.paragraphs[1:]:
-                for run in paragraph.runs:
-                    run.text = ""
-        else:
-            text_frame.text = display
+        set_centered_text(shape, display)
 
     OUTPUT.mkdir(parents=True, exist_ok=True)
     safe_pool_name = label.replace(" ", "_")
@@ -467,7 +519,7 @@ def main():
 
     print(
         "Generation finished. Review every day marked "
-        "'VERIFY: hours not found on calendar' before using the PDFs."
+        "'CLOSED' before using the PDFs."
     )
 
 
