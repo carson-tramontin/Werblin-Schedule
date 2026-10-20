@@ -291,8 +291,14 @@ def update_template(pool_key, week_start, events):
     The background image, title, QR codes, and other design elements
     remain untouched.
     """
-    info = POOLS[pool_key]
-    template = info["template"]
+    if pool_key == "olympic":
+    label = "Olympic Pool"
+    template = ROOT / "Olympic Pool Spring 2026 Hours.pptx"
+elif pool_key == "patio":
+    label = "Patio Pool"
+    template = ROOT / "Patio Pool Spring 2026 Hours.pptx"
+else:
+    raise RuntimeError(f"Unknown pool key: {pool_key}")
 
     if not template.is_file():
         raise RuntimeError(f"Template not found: {template.name}")
@@ -380,7 +386,7 @@ def update_template(pool_key, week_start, events):
             shape.text_frame.text = display
 
     OUTPUT.mkdir(parents=True, exist_ok=True)
-    safe_pool_name = info["label"].replace(" ", "_")
+    safe_pool_name = label.replace(" ", "_")
     pptx_path = OUTPUT / f"{safe_pool_name}_{week_start.isoformat()}.pptx"
 
     presentation.save(str(pptx_path))
