@@ -25,6 +25,7 @@ permissions:
 jobs:
   generate:
     runs-on: ubuntu-latest
+
     steps:
       - name: Get repository files
         uses: actions/checkout@v4
@@ -37,7 +38,7 @@ jobs:
       - name: Install schedule tools
         run: |
           python -m pip install --upgrade pip
-          python -m pip install playwright reportlab requests beautifulsoup4 python-pptx
+          python -m pip install playwright reportlab requests beautifulsoup4 python-pptx boto3
           python -m playwright install --with-deps chromium
           sudo apt-get update
           sudo apt-get install -y libreoffice
@@ -49,7 +50,53 @@ jobs:
             --olympic "${{ inputs.olympic_pool }}" \
             --patio "${{ inputs.patio_pool }}"
 
-      - name: Save generated PDFs
+      - name: Upload PDFs to private Cloudflare R2
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: rutgers-pool-schedules
+          GITHUB_RUN_ID: ${{ github.run_id }}
+        run: |
+          python - <<'PY'
+          import os
+          import glob
+          import boto3
+          from pathlib import Path
+
+          files = glob.glob("output/*.pdf")
+          if not files:
+              raise SystemExit("ERROR: No PDFs were generated in output/.")
+
+          client = boto3.client(
+              "s3",
+              endpoint_url=(
+                  "https://"
+                  + os.environ["CLOUDFLARE_ACCOUNT_ID"]
+                  + ".r2.cloudflarestorage.com"
+              ),
+              aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
+              aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
+              region_name="auto",
+          )
+
+          bucket = os.environ["R2_BUCKET"]
+          run_id = os.environ["GITHUB_RUN_ID"]
+
+          for filename in files:
+              key = f"runs/{run_id}/{Path(filename).name}"
+              client.upload_file(
+                  filename,
+                  bucket,
+                  key,
+                  ExtraArgs={"ContentType": "application/pdf"},
+              )
+              print(f"Uploaded {filename} to private R2 key: {key}")
+
+          print(f"Successfully uploaded {len(files)} PDF(s).")
+          PY
+
+      - name: Save generated PDFs as a backup artifact
         uses: actions/upload-artifact@v4
         with:
           name: Rutgers-Pool-Schedules
