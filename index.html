@@ -1,0 +1,141 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rutgers Pool Schedule Generator</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f4f5f7;
+      color: #202124;
+    }
+    header {
+      background: #cc0033;
+      color: white;
+      padding: 28px 20px;
+      text-align: center;
+    }
+    header h1 { margin: 0 0 8px; }
+    main {
+      max-width: 720px;
+      margin: 30px auto;
+      padding: 0 16px;
+    }
+    .panel {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 18px;
+      box-shadow: 0 2px 8px #0000000d;
+    }
+    label { display: block; margin: 12px 0; }
+    input[type="date"] {
+      padding: 10px;
+      font-size: 16px;
+      width: 100%;
+      max-width: 300px;
+    }
+    .pool {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+    }
+    .pool input { width: 18px; height: 18px; }
+    button {
+      width: 100%;
+      padding: 15px;
+      border: 0;
+      border-radius: 8px;
+      background: #cc0033;
+      color: white;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    button:hover { background: #a90029; }
+    #status {
+      margin-top: 16px;
+      line-height: 1.6;
+      overflow-wrap: anywhere;
+    }
+    .note { color: #555; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Rutgers Pool Schedule Generator</h1>
+    <div>Rutgers Recreation · Weekly Pool Hours</div>
+  </header>
+
+  <main>
+    <section class="panel">
+      <h2>Generate weekly schedules</h2>
+      <p>Select the week beginning on Monday and the pools you need.</p>
+
+      <label for="week"><strong>Week beginning</strong></label>
+      <input type="date" id="week" required>
+
+      <h3>Select pools</h3>
+      <label class="pool">
+        <input type="checkbox" id="olympic" checked>
+        <span>Olympic Pool</span>
+      </label>
+      <label class="pool">
+        <input type="checkbox" id="patio" checked>
+        <span>Patio Pool</span>
+      </label>
+
+      <br>
+      <button id="generate">Generate Weekly Schedules</button>
+      <div id="status" role="status" aria-live="polite"></div>
+    </section>
+
+    <section class="panel">
+      <h3>How it works</h3>
+      <p>1. Select your week and pools.</p>
+      <p>2. Retrieve pool-only hours from the Rutgers Recreation calendar.</p>
+      <p>3. Review any missing or unclear hours.</p>
+      <p>4. Create separate portrait PDFs using the original pool templates.</p>
+      <p class="note">
+        Setup in progress: calendar retrieval, PowerPoint templates,
+        and PDF generation are not connected yet.
+      </p>
+    </section>
+  </main>
+
+  <script>
+    const date = new Date();
+    const monday = new Date(date);
+    monday.setDate(date.getDate() - (date.getDay() + 6) % 7);
+    document.getElementById("week").value =
+      `${monday.getFullYear()}-${String(monday.getMonth()+1).padStart(2,"0")}-${String(monday.getDate()).padStart(2,"0")}`;
+
+    document.getElementById("generate").addEventListener("click", () => {
+      const week = document.getElementById("week").value;
+      const pools = [
+        document.getElementById("olympic").checked && "Olympic Pool",
+        document.getElementById("patio").checked && "Patio Pool"
+      ].filter(Boolean);
+      const status = document.getElementById("status");
+
+      if (!week) {
+        status.textContent = "Please select a week.";
+      } else if (!pools.length) {
+        status.textContent = "Please select at least one pool.";
+      } else {
+        status.textContent =
+          `Selection saved for this run: week beginning ${week}. ` +
+          `Pools: ${pools.join(", ")}. ` +
+          "Next, we need to connect the Rutgers calendar and PDF generator.";
+      }
+    });
+  </script>
+</body>
+</html>
