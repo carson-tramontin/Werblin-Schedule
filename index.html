@@ -1,291 +1,405 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Rutgers Pool Schedule Generator</title>
-<style>
-:root {
-  --scarlet: #cc0033;
-  --dark: #252936;
-  --muted: #626b7a;
-  --line: #e0e4eb;
-  --background: #f4f6fa;
-}
-* { box-sizing: border-box; }
-body {
-  margin: 0;
-  font-family: Arial, Helvetica, sans-serif;
-  background: var(--background);
-  color: var(--dark);
-}
-header {
-  background: var(--scarlet);
-  color: white;
-  padding: 26px 20px;
-}
-.header-inner, main, footer {
-  max-width: 850px;
-  margin: auto;
-}
-.brand {
-  font-size: 12px;
-  letter-spacing: 2px;
-  font-weight: bold;
-  opacity: .9;
-}
-header h1 {
-  margin: 12px 0 8px;
-  font-size: clamp(25px, 5vw, 36px);
-}
-header p { margin: 0; opacity: .92; }
-main { padding: 25px 16px 40px; }
-.card {
-  background: white;
-  border: 1px solid var(--line);
-  border-radius: 13px;
-  padding: 24px;
-  margin-bottom: 18px;
-  box-shadow: 0 3px 12px #202b3b08;
-}
-h2 { margin: 0 0 8px; font-size: 21px; }
-h3 { font-size: 16px; margin: 24px 0 12px; }
-.muted { color: var(--muted); line-height: 1.55; }
-label.field-label {
-  display: block;
-  font-weight: bold;
-  margin: 22px 0 9px;
-}
-input[type="date"] {
-  width: 100%;
-  max-width: 320px;
-  padding: 12px;
-  border: 1px solid #cbd1dc;
-  border-radius: 8px;
-  font: inherit;
-}
-.pool-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 12px;
-}
-.pool-option {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  padding: 16px;
-  cursor: pointer;
-}
-.pool-option:has(input:checked) {
-  border-color: var(--scarlet);
-  background: #fff7f8;
-}
-.pool-option input {
-  width: 18px;
-  height: 18px;
-  accent-color: var(--scarlet);
-}
-.pool-name { font-weight: bold; }
-.pool-detail {
-  display: block;
-  margin-top: 4px;
-  font-size: 12px;
-  color: var(--muted);
-}
-button {
-  font: inherit;
-  font-weight: bold;
-  cursor: pointer;
-  border-radius: 8px;
-  padding: 14px 18px;
-}
-.primary {
-  width: 100%;
-  margin-top: 24px;
-  color: white;
-  background: var(--scarlet);
-  border: 0;
-}
-.primary:hover { background: #a9002a; }
-button:focus-visible, input:focus-visible {
-  outline: 3px solid #3975d5;
-  outline-offset: 3px;
-}
-.status {
-  margin-top: 17px;
-  padding: 14px;
-  background: #f1f4f9;
-  border-radius: 8px;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-}
-.status strong { display: block; margin-bottom: 5px; }
-.steps {
-  display: grid;
-  gap: 16px;
-  margin-top: 20px;
-}
-.step {
-  display: flex;
-  align-items: flex-start;
-  gap: 13px;
-}
-.number {
-  flex: 0 0 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
-  background: #fce8ed;
-  color: var(--scarlet);
-  border-radius: 50%;
-  font-weight: bold;
-}
-.step p { margin: 4px 0 0; line-height: 1.45; }
-.tag {
-  display: inline-block;
-  margin-top: 14px;
-  border: 1px solid #e5c5cd;
-  border-radius: 30px;
-  padding: 5px 10px;
-  color: #8e1733;
-  font-size: 12px;
-  font-weight: bold;
-}
-footer {
-  padding: 0 16px 30px;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.5;
-}
-@media (max-width: 480px) {
-  .card { padding: 18px; }
-}
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rutgers Pool Schedule Generator</title>
+  <style>
+    :root {
+      font-family: Arial, Helvetica, sans-serif;
+      color: #202a35;
+      background: #f3f5f8;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 32px 16px;
+    }
+
+    main {
+      max-width: 720px;
+      margin: 0 auto;
+    }
+
+    header {
+      background: #cc0033;
+      color: white;
+      padding: 26px;
+      border-radius: 12px 12px 0 0;
+    }
+
+    header h1 {
+      margin: 0 0 8px;
+      font-size: 27px;
+    }
+
+    header p { margin: 0; line-height: 1.5; }
+
+    section {
+      background: white;
+      padding: 24px;
+      margin-bottom: 16px;
+      border-radius: 10px;
+      box-shadow: 0 2px 8px #17253612;
+    }
+
+    header + section { border-radius: 0 0 10px 10px; }
+
+    h2 { margin-top: 0; font-size: 20px; }
+
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 700;
+    }
+
+    input[type="date"] {
+      display: block;
+      width: 100%;
+      max-width: 320px;
+      padding: 11px;
+      border: 1px solid #b8c0ca;
+      border-radius: 6px;
+      font: inherit;
+      margin-bottom: 20px;
+    }
+
+    .pool-option {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 14px 0;
+      font-weight: 400;
+    }
+
+    .pool-option input {
+      width: 18px;
+      height: 18px;
+      accent-color: #cc0033;
+    }
+
+    button {
+      width: 100%;
+      margin-top: 12px;
+      padding: 14px 18px;
+      border: 0;
+      border-radius: 7px;
+      background: #cc0033;
+      color: white;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button:hover { background: #a9002a; }
+    button:disabled { opacity: .6; cursor: wait; }
+
+    #status {
+      margin-top: 18px;
+      line-height: 1.55;
+      overflow-wrap: anywhere;
+    }
+
+    .download {
+      display: block;
+      padding: 13px 15px;
+      margin-top: 12px;
+      border: 1px solid #d8dee7;
+      border-radius: 7px;
+      text-decoration: none;
+      color: #a00029;
+      font-weight: 700;
+    }
+
+    .download:hover { background: #fff4f6; }
+
+    .note {
+      color: #596675;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .error { color: #a00020; font-weight: 700; }
+    .success { color: #176b3a; font-weight: 700; }
+
+    footer {
+      text-align: center;
+      color: #596675;
+      font-size: 13px;
+      margin-top: 20px;
+    }
+
+    a { overflow-wrap: anywhere; }
+  </style>
 </head>
 <body>
-<header>
-  <div class="header-inner">
-    <div class="brand">RUTGERS UNIVERSITY · RECREATION</div>
-    <h1>Pool Schedule Generator</h1>
-    <p>Weekly operating hours · Werblin Recreation Center</p>
-  </div>
-</header>
+  <main>
+    <header>
+      <h1>Rutgers Pool Schedule Generator</h1>
+      <p>Generate weekly Olympic Pool and Patio Pool schedules as separate PDFs.</p>
+    </header>
 
-<main>
-  <section class="card">
-    <h2>Build your weekly schedules</h2>
-    <p class="muted">
-      Choose the week and pools. The finished tool will retrieve official
-      pool hours and prepare separate printable PDFs.
-    </p>
+    <section>
+      <h2>Generate schedules</h2>
 
-    <label class="field-label" for="week">Week beginning (Monday)</label>
-    <input type="date" id="week" required>
+      <label for="weekStart">Week starting (Monday)</label>
+      <input type="date" id="weekStart" required>
 
-    <h3>Which schedules do you need?</h3>
-    <div class="pool-grid">
+      <label>Choose which schedules to generate</label>
+
       <label class="pool-option">
         <input type="checkbox" id="olympic" checked>
-        <span>
-          <span class="pool-name">Olympic Pool</span>
-          <span class="pool-detail">Olympic Pool template</span>
-        </span>
+        Olympic Pool
       </label>
+
       <label class="pool-option">
         <input type="checkbox" id="patio" checked>
-        <span>
-          <span class="pool-name">Patio Pool</span>
-          <span class="pool-detail">Patio Pool template</span>
-        </span>
+        Patio Pool
       </label>
-    </div>
 
-    <button class="primary" id="generate">Generate Weekly Schedules</button>
-    <div class="status" id="status" role="status" aria-live="polite">
-      <strong>Ready to configure</strong>
-Choose your week and pools. Live calendar retrieval and PDF creation
-are still being connected.
-    </div>
-  </section>
+      <p class="note">
+        The generator uses the Rutgers Recreation calendar and the existing
+        pool PowerPoint templates. If hours are missing or unclear, they
+        should be flagged rather than guessed.
+      </p>
 
-  <section class="card">
-    <h2>How the generator will work</h2>
-    <div class="steps">
-      <div class="step">
-        <span class="number">1</span>
-        <p><strong>Retrieve official hours</strong><br>
-        Read pool-specific information from the Rutgers Recreation calendar.</p>
+      <button id="generateButton" type="button">Generate PDF schedules</button>
+
+      <div id="status" role="status" aria-live="polite">
+        Choose a Monday and select at least one pool to begin.
       </div>
-      <div class="step">
-        <span class="number">2</span>
-        <p><strong>Check the schedule</strong><br>
-        Flag missing or unclear information instead of guessing.</p>
-      </div>
-      <div class="step">
-        <span class="number">3</span>
-        <p><strong>Prepare two PDFs</strong><br>
-        Preserve each pool's existing template and portrait layout.</p>
-      </div>
-    </div>
-    <span class="tag">SETUP IN PROGRESS</span>
-    <p class="muted">
-      This webpage does not yet retrieve live hours or generate PDFs.
-      The Generate button currently validates your selections only.
-    </p>
-    <p><a href="https://recreation.rutgers.edu/recreation-list-calendar?calendar_filter=122"
-      target="_blank" rel="noopener noreferrer">Open the Rutgers Recreation calendar ↗</a></p>
-  </section>
-</main>
 
-<footer>
-  Rutgers Recreation pool schedules. Always confirm special events,
-  closures, and schedule changes against official Rutgers information.
-</footer>
+      <div id="downloads"></div>
+    </section>
 
-<script>
-const dateInput = document.getElementById("week");
-const today = new Date();
-const monday = new Date(today);
-monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
-dateInput.value = [
-  monday.getFullYear(),
-  String(monday.getMonth() + 1).padStart(2, "0"),
-  String(monday.getDate()).padStart(2, "0")
-].join("-");
+    <section>
+      <h2>Official calendar</h2>
+      <p>
+        Check the source calendar if you need to confirm pool hours.
+      </p>
+      <a href="https://recreation.rutgers.edu/recreation-list-calendar?calendar_filter=122"
+         target="_blank" rel="noopener noreferrer">
+        Open Rutgers Recreation calendar
+      </a>
+    </section>
 
-document.getElementById("generate").addEventListener("click", () => {
-  const week = dateInput.value;
-  const pools = [
-    document.getElementById("olympic").checked ? "Olympic Pool" : null,
-    document.getElementById("patio").checked ? "Patio Pool" : null
-  ].filter(Boolean);
-  const status = document.getElementById("status");
+    <footer>Rutgers Pool Schedule Generator</footer>
+  </main>
 
-  if (!week) {
-    status.innerHTML = "<strong>Choose a week</strong>Please select a Monday date.";
-    return;
-  }
-  const chosenDate = new Date(week + "T12:00:00");
-  if (chosenDate.getDay() !== 1) {
-    status.innerHTML = "<strong>Please choose Monday</strong>The week must begin on a Monday.";
-    return;
-  }
-  if (pools.length === 0) {
-    status.innerHTML = "<strong>Select a pool</strong>Choose at least one pool.";
-    return;
-  }
-  status.replaceChildren();
-  const heading = document.createElement("strong");
-  heading.textContent = "Your selection is ready";
-  const details = document.createElement("p");
-  details.textContent = "Week beginning " + week + ". Selected: " +
-    pools.join(" and ") + ".";
-  const note = document.createElement("p");
-  note.textContent = "Live retrieval and PDF generation are not connected yet. No schedule has been generated.";
-  status.append(heading, details, note);
-});
-</script>
+  <script>
+    const WORKER_URL =
+      "https://rutgers-pool-generator.carson-tramontin.workers.dev";
+
+    const weekInput = document.getElementById("weekStart");
+    const olympicInput = document.getElementById("olympic");
+    const patioInput = document.getElementById("patio");
+    const generateButton = document.getElementById("generateButton");
+    const statusBox = document.getElementById("status");
+    const downloadsBox = document.getElementById("downloads");
+
+    function getLocalMonday() {
+      const today = new Date();
+      const day = today.getDay();
+      const daysSinceMonday = (day + 6) % 7;
+      today.setDate(today.getDate() - daysSinceMonday);
+
+      const year = today.getFullYear();
+      const month = String(today.getMonth() + 1).padStart(2, "0");
+      const date = String(today.getDate()).padStart(2, "0");
+
+      return `${year}-${month}-${date}`;
+    }
+
+    weekInput.value = getLocalMonday();
+
+    function showStatus(message, className = "") {
+      statusBox.className = className;
+      statusBox.textContent = message;
+    }
+
+    function addDownload(label, url) {
+      if (typeof url !== "string" || !url.startsWith("https://")) {
+        return;
+      }
+
+      const link = document.createElement("a");
+      link.className = "download";
+      link.href = url;
+      link.textContent = `Download ${label} PDF`;
+      link.setAttribute("download", "");
+      downloadsBox.appendChild(link);
+    }
+
+    async function readJson(response) {
+      const text = await response.text();
+
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(
+          `The schedule service returned an unexpected response (HTTP ${response.status}).`
+        );
+      }
+
+      if (!response.ok && response.status !== 202) {
+        throw new Error(data.error || data.message ||
+          `The request failed (HTTP ${response.status}).`);
+      }
+
+      return data;
+    }
+
+    function delay(milliseconds) {
+      return new Promise(resolve => setTimeout(resolve, milliseconds));
+    }
+
+    async function checkRun(runId, selectedPools) {
+      const maximumChecks = 180;
+
+      for (let check = 0; check < maximumChecks; check++) {
+        await delay(3000);
+
+        const url = new URL(`${WORKER_URL}/status`);
+        url.searchParams.set("run_id", runId);
+
+        let response;
+        let data;
+
+        try {
+          response = await fetch(url.toString());
+          data = await readJson(response);
+        } catch (error) {
+          showStatus(
+            `The schedule is running, but its status could not be checked: ${error.message}. You can check GitHub Actions before trying again.`
+          );
+          generateButton.disabled = false;
+          return;
+        }
+
+        const runStatus = String(data.status || "").toLowerCase();
+        const conclusion = String(data.conclusion || "").toLowerCase();
+
+        if (runStatus === "completed" || runStatus === "success" ||
+            conclusion === "success") {
+          if (conclusion && conclusion !== "success") {
+            showStatus(
+              `The workflow finished with status: ${data.conclusion}. Check GitHub Actions for details.`,
+              "error"
+            );
+            generateButton.disabled = false;
+            return;
+          }
+
+          downloadsBox.replaceChildren();
+
+          const links = data.downloads || {};
+          if (selectedPools.olympic) {
+            addDownload("Olympic Pool", links.olympic);
+          }
+          if (selectedPools.patio) {
+            addDownload("Patio Pool", links.patio);
+          }
+
+          if (downloadsBox.children.length > 0) {
+            showStatus("Schedules generated successfully. Your PDFs are ready.", "success");
+          } else {
+            showStatus(
+              "The workflow completed, but download links were not returned. Check the workflow run and uploaded PDFs in GitHub Actions.",
+              "error"
+            );
+          }
+
+          generateButton.disabled = false;
+          return;
+        }
+
+        if (runStatus === "failure" || runStatus === "cancelled" ||
+            runStatus === "timed_out" || runStatus === "action_required" ||
+            ["failure", "cancelled", "timed_out"].includes(conclusion)) {
+          showStatus(
+            `Schedule generation did not succeed (${data.conclusion || data.status}). Check GitHub Actions for the error details.`,
+            "error"
+          );
+          generateButton.disabled = false;
+          return;
+        }
+
+        showStatus(
+          `Generating schedules… This page is checking progress (${check + 1} of ${maximumChecks}).`
+        );
+      }
+
+      showStatus(
+        "The workflow is taking longer than expected. Check GitHub Actions before clicking Generate again."
+      );
+      generateButton.disabled = false;
+    }
+
+    generateButton.addEventListener("click", async () => {
+      downloadsBox.replaceChildren();
+
+      const weekStart = weekInput.value;
+      const selectedPools = {
+        olympic: olympicInput.checked,
+        patio: patioInput.checked
+      };
+
+      if (!weekStart) {
+        showStatus("Please choose a week starting date.", "error");
+        return;
+      }
+
+      const chosenDate = new Date(`${weekStart}T12:00:00`);
+      if (chosenDate.getDay() !== 1) {
+        showStatus("Please choose a Monday as the week starting date.", "error");
+        return;
+      }
+
+      if (!selectedPools.olympic && !selectedPools.patio) {
+        showStatus("Please select Olympic Pool, Patio Pool, or both.", "error");
+        return;
+      }
+
+      generateButton.disabled = true;
+      showStatus("Sending your request to the schedule generator…");
+
+      try {
+        const response = await fetch(`${WORKER_URL}/generate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            week_start: weekStart,
+            olympic_pool: selectedPools.olympic,
+            patio_pool: selectedPools.patio
+          })
+        });
+
+        const data = await readJson(response);
+
+        if (!data.run_id) {
+          showStatus(
+            data.message ||
+            "GitHub may have accepted the request, but the run ID was not returned. Check GitHub Actions before submitting another request.",
+            "error"
+          );
+          generateButton.disabled = false;
+          return;
+        }
+
+        showStatus("Request accepted. Waiting for the PDFs to be generated…");
+        await checkRun(String(data.run_id), selectedPools);
+      } catch (error) {
+        showStatus(
+          `Could not start or track the schedule generation: ${error.message}`,
+          "error"
+        );
+        generateButton.disabled = false;
+      }
+    });
+  </script>
 </body>
 </html>
