@@ -37,7 +37,7 @@ OUTPUT = ROOT / "output"
 POOLS = {
     "olympic": {
         "label": "Olympic Pool",
-        "template": ROOT / "Olympic Pool Spring 2026 Hours.pptx",
+        "": ROOT / "Olympic Pool Spring 2026 Hours.pptx",
         "match": re.compile(r"SWRC\s+Olympic\s+Pool", re.I),
     },
     "patio": {
@@ -284,13 +284,12 @@ def replace_text_in_shape(shape, replacement):
     return True
 
 
+
 def update_template(pool_key, week_start, events):
     """
-    Update the supplied PowerPoint conservatively.
-
-    The template must contain one recognizable day/hour text field
-    for each day of the week. If that layout cannot be identified,
-    stop rather than output a misleading schedule.
+    Update the seven existing hours text boxes in the supplied template.
+    The background image, title, QR codes, and other design elements
+    remain untouched.
     """
     info = POOLS[pool_key]
     template = info["template"]
@@ -299,100 +298,94 @@ def update_template(pool_key, week_start, events):
         raise RuntimeError(f"Template not found: {template.name}")
 
     presentation = Presentation(str(template))
-    days = [
-        week_start + timedelta(days=i)
-        for i in range(7)
-    ]
 
-    # Collect all text-bearing shapes across all slides.
-    shapes = []
-    for slide in presentation.slides:
-        for shape in slide.shapes:
-            if shape.has_text_frame:
-                shapes.append(shape)
-
-    # Identify candidate fields by their existing day labels or
-    # time/hour placeholders. Do not change unrelated text.
-    candidates = []
-    for shape in shapes:
-        original = shape.text.strip()
-        if not original:
-            continue
-
-        lower = original.lower()
-        if any(day.lower() in lower for day in WEEKDAYS):
-            candidates.append(shape)
-        elif (
-            "swim meet" in lower
-            or "closed" in lower
-            or "hours not listed" in lower
-            or TIME_RANGE_RE.search(original)
-        ):
-            candidates.append(shape)
-
-    if len(candidates) < 7:
+    if len(presentation.slides) != 1:
         raise RuntimeError(
-            f"Could not confidently identify seven daily fields in "
-            f"{template.name} (found {len(candidates)} candidates). "
-            "No PDF was created. The template layout needs to be mapped."
+            f"Expected one slide in {template.name}; "
+            f"found {len(presentation.slides)}."
         )
 
-    # Match each date to a shape that explicitly identifies that
-    # weekday, where possible.
-    assignments = {}
-    unused = list(candidates)
+    slide = presentation.slides[0]
 
-    for day in days:
-        weekday = day.strftime("%A")
-        matching = [
-            shape for shape in unused
-            if re.search(rf"\b{weekday}\b", shape.text, re.I)
-        ]
-        if matching:
-            assignments[day] = matching[0]
-            unused.remove(matching[0])
+    # The seven editable hours boxes are identified by their vertical
+    # positions. The background is a picture, not a text box.
+    hour_boxes = []
 
-    # Remaining fields are assigned in their original template order.
-    for day in days:
-        if day in assignments:
+    for shape in slide.shapes:
+        if not shape.has_text_frame:
             continue
-        if not unused:
-            raise RuntimeError(
-                f"Unable to map all seven days in {template.name}."
-            )
-        assignments[day] = unused.pop(0)
 
-    by_date = {}
+        # Hours boxes begin around 2.2 inches from the top and end
+        # around 7.3 inches. This excludes the title and footer.
+        top_inches = shape.top / 914400
+
+        if 2.0 <= top_inches <= 7.3:
+            hour_boxes.append(shape)
+
+    hour_boxes.sort(key=lambda shape: shape.top)
+
+    if len(hour_boxes) != 7:
+        details = [
+            f"{shape.name}: top={shape.top / 914400:.2f}in, "
+            f"text={shape.text.strip()!r}"
+            for shape in hour_boxes
+        ]
+        raise RuntimeError(
+            f"Expected 7 hours boxes in {template.name}, "
+            f"found {len(hour_boxes)}. "
+            f"Detected boxes: {details}"
+        )
+
+    days = [week_start + timedelta(days=i) for i in range(7)]
+
+    events_by_date = {}
     for event in events:
-        by_date.setdefault(event["date"], []).append(event["hours"])
+        events_by_date.setdefault(event["date"], []).append(event)
 
-    for day in days:
-        shape = assignments[day]
-        hours = sorted(set(by_date.get(day, [])))
+    for day, shape in zip(days, hour_boxes):
+        day_events = events_by_date.get(day, [])
+
+        # Only use events already filtered for this pool.
+        hours = sorted({
+            event["hours"]
+            for event in day_events
+            if event.get("pool") == pool_key
+        })
 
         if len(hours) == 1:
-            display = f"{day.strftime('%A')}\n{hours[0]}"
+            display = hours[0]
         elif len(hours) > 1:
-            display = (
-                f"{day.strftime('%A')}\n"
-                + "\n".join(hours)
-                + "\nVERIFY: multiple calendar entries"
-            )
+            display = "\n".join(hours) + "\nVERIFY: multiple entries"
         else:
-            # A missing event is not proof that the pool is closed.
-            display = (
-                f"{day.strftime('%A')}\n"
-                "VERIFY: hours not found on calendar"
-            )
+            display = "VERIFY: hours not found"
 
-        replace_text_in_shape(shape, display)
+        # Keep the existing first-run formatting where possible.
+        paragraph = (
+            shape.text_frame.paragraphs[0]
+            if shape.text_frame.paragraphs
+            else None
+        )
+
+        if paragraph and paragraph.runs:
+            paragraph.runs[0].text = display
+            for run in paragraph.runs[1:]:
+                run.text = ""
+
+            # Clear any remaining paragraphs without removing the
+            # text frame or changing the shape's geometry.
+            for extra in shape.text_frame.paragraphs[1:]:
+                for run in extra.runs:
+                    run.text = ""
+        else:
+            shape.text_frame.text = display
 
     OUTPUT.mkdir(parents=True, exist_ok=True)
     safe_pool_name = info["label"].replace(" ", "_")
     pptx_path = OUTPUT / f"{safe_pool_name}_{week_start.isoformat()}.pptx"
-    presentation.save(str(pptx_path))
 
+    presentation.save(str(pptx_path))
     return pptx_path
+
 
 
 def export_pdf(pptx_path):
